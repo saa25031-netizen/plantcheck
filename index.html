@@ -77,8 +77,8 @@
                     </p>
                 </div>
             </div>
-            <button id="fixConfigHelpBtn" class="hidden shrink-0 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition shadow">
-                Firebase設定方法を見る
+            <button id="fixConfigHelpBtn" class="shrink-0 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition shadow">
+                Firebase 400エラーの解決手順を見る
             </button>
         </div>
 
@@ -360,183 +360,33 @@ service cloud.firestore {
         const todayStr = new Date().toISOString().split('T')[0];
         document.getElementById('recordDate').value = todayStr;
 
-        function showToast(message, type = 'success') {
-            const toast = document.getElementById('toast');
-            const toastMessage = document.getElementById('toastMessage');
-            const toastIcon = document.getElementById('toastIcon');
-
-            toastMessage.textContent = message;
-            if (type === 'error') {
-                toastIcon.setAttribute('data-lucide', 'alert-circle');
-                toastIcon.className = 'w-5 h-5 text-rose-400';
-            } else if (type === 'warning') {
-                toastIcon.setAttribute('data-lucide', 'alert-triangle');
-                toastIcon.className = 'w-5 h-5 text-amber-400';
-            } else {
-                toastIcon.setAttribute('data-lucide', 'check-circle');
-                toastIcon.className = 'w-5 h-5 text-emerald-400';
-            }
-            if (window.lucide) lucide.createIcons();
-
-            toast.classList.remove('translate-y-20', 'opacity-0');
-            toast.classList.add('translate-y-0', 'opacity-100');
-
-            setTimeout(() => {
-                toast.classList.remove('translate-y-0', 'opacity-100');
-                toast.classList.add('translate-y-20', 'opacity-0');
-            }, 3500);
-        }
-
-        function loadFromLocalStorage() {
-            try {
-                const stored = localStorage.getItem('plant_growth_records');
-                if (stored) {
-                    allRecords = JSON.parse(stored);
-                } else {
-                    allRecords = [];
-                }
-            } catch (e) {
-                console.error("LocalStorage read error:", e);
-                allRecords = [];
-            }
-            renderTable();
-            updateCropFilters();
-            updateChart();
-        }
-
-        function saveToLocalStorage() {
-            try {
-                localStorage.setItem('plant_growth_records', JSON.stringify(allRecords));
-            } catch (e) {
-                console.error("LocalStorage save error:", e);
-            }
-        }
-
-        function switchToLocalMode(reasonMessage) {
-            isLocalMode = true;
-            const badgeText = document.getElementById('statusBadgeText');
-            const badgeIcon = document.getElementById('statusBadgeIcon');
-            const detailText = document.getElementById('statusDetailText');
-            const helpBtn = document.getElementById('fixConfigHelpBtn');
-
-            badgeText.textContent = "ローカル保存モード (自動切替済)";
-            badgeText.className = "px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-200 text-amber-900";
-            
-            badgeIcon.innerHTML = `<i data-lucide="hard-drive" class="w-5 h-5 text-amber-600"></i>`;
-            detailText.textContent = `${reasonMessage} データをブラウザ内に安全に保存中（画面の再読み込みを行っても消えません）。`;
-            helpBtn.classList.remove('hidden');
-
-            if (window.lucide) lucide.createIcons();
-            loadFromLocalStorage();
-        }
-
-        function initChart() {
-            const canvas = document.getElementById('growthChart');
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            
-            chartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [
-                        {
-                            label: '草丈 (cm)',
-                            data: [],
-                            borderColor: '#10b981',
-                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                            fill: true,
-                            tension: 0.3,
-                            yAxisID: 'y'
-                        },
-                        {
-                            label: '葉枚数 (枚)',
-                            data: [],
-                            borderColor: '#f59e0b',
-                            backgroundColor: 'transparent',
-                            borderDash: [5, 5],
-                            tension: 0.3,
-                            yAxisID: 'y1'
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'index',
-                        intersect: false,
-                    },
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            padding: 10,
-                            backgroundColor: '#0f172a',
-                            titleFont: { size: 12 },
-                            bodyFont: { size: 12 }
-                        }
-                    },
-                    scales: {
-                        x: { grid: { display: false } },
-                        y: {
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            title: { display: true, text: '草丈 (cm)', font: { size: 10 } },
-                            min: 0
-                        },
-                        y1: {
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            title: { display: true, text: '葉枚数 (枚)', font: { size: 10 } },
-                            grid: { drawOnChartArea: false },
-                            min: 0
-                        }
-                    }
-                }
-            });
-        }
-
-        function updateChart() {
-            if (!chartInstance) return;
-
-            const selectedCrop = document.getElementById('chartCropFilter').value;
-            let filtered = [...allRecords];
-
-            if (selectedCrop !== 'ALL') {
-                filtered = filtered.filter(r => r.cropName === selectedCrop);
-            }
-
-            filtered.sort((a, b) => new Date(a.recordDate) - new Date(b.recordDate));
-
-            chartInstance.data.labels = filtered.map(r => r.recordDate);
-            chartInstance.data.datasets[0].data = filtered.map(r => r.plantHeight);
-            chartInstance.data.datasets[1].data = filtered.map(r => r.leafCount);
-            chartInstance.update();
-        }
-
         async function setupFirebase() {
             try {
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Try authenticating
-                try {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                // Authentication attempt with bypass for 400 Bad Request
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    try {
                         await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        await signInAnonymously(auth);
+                    } catch (e) {
+                        console.warn("Custom token sign-in skipped:", e);
                     }
-                } catch (authErr) {
-                    console.warn("Firebase Auth disabled in console:", authErr.code || authErr.message);
+                } else {
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (authErr) {
+                        // HTTP 400 Bad Request happens when "Anonymous Auth" is disabled in Firebase Console.
+                        // We catch it safely so it doesn't crash the app or block Firestore access.
+                        console.info("Firebase Auth (Anonymous) is disabled in Firebase Console. Continuing directly with Firestore/LocalStorage.");
+                    }
                 }
 
                 listenToRecords();
             } catch (err) {
-                console.error("Firebase setup failed:", err);
-                switchToLocalMode("Firebase接続初期化に失敗したため、");
+                console.warn("Firebase setup initialization notice:", err);
+                switchToLocalMode("Firebase初期化エラーが発生したため、");
             }
         }
 
@@ -561,8 +411,8 @@ service cloud.firestore {
                     renderTable();
                     updateChart();
                 }, (error) => {
-                    console.warn("Firestore snapshot access error:", error.code || error.message);
-                    switchToLocalMode("Firestoreのアクセス権限（ルール）が未設定のため、");
+                    console.warn("Firestore access permission notice:", error.code || error.message);
+                    switchToLocalMode("Firestoreのアクセス権限（ルール）の設定が必要なため、");
                 });
             } catch (e) {
                 console.error("Snapshot listen exception:", e);
