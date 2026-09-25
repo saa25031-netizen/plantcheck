@@ -78,7 +78,7 @@
                 </div>
             </div>
             <button id="fixConfigHelpBtn" class="shrink-0 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition shadow">
-                Firebase 400エラーの解決手順を見る
+                設定ガイドを見る
             </button>
         </div>
 
@@ -277,24 +277,16 @@
             </div>
             
             <p class="text-xs text-slate-600 leading-relaxed">
-                `auth/configuration-not-found` エラーを解消し、Firebase Firestoreで完全に同期保存するには以下の2点の設定をFirebaseコンソールで行ってください。
+                Firebase Firestoreで複数端末での共有保存を行うには以下のルール設定をFirebaseコンソールで行ってください。
             </p>
 
             <div class="space-y-3 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                 <div class="font-bold text-slate-800 flex items-center gap-1.5">
                     <span class="bg-emerald-600 text-white rounded-full w-4 h-4 inline-flex items-center justify-center text-[10px]">1</span>
-                    匿名認証の有効化（Authentication）
-                </div>
-                <p class="text-slate-600 pl-5">
-                    <a href="https://console.firebase.google.com/" target="_blank" class="text-emerald-600 underline font-semibold">Firebase Console</a> &gt; <strong>Authentication</strong> &gt; 「始める」&gt; <strong>Sign-in method</strong> &gt; <strong>「匿名 (Anonymous)」</strong> を有効にして保存。
-                </p>
-
-                <div class="font-bold text-slate-800 flex items-center gap-1.5 pt-1">
-                    <span class="bg-emerald-600 text-white rounded-full w-4 h-4 inline-flex items-center justify-center text-[10px]">2</span>
                     Firestore データベースルールの開放
                 </div>
                 <p class="text-slate-600 pl-5">
-                    <strong>Firestore Database</strong> &gt; <strong>ルール</strong> タブを開き、以下に変更して「公開」をクリックします。
+                    <a href="https://console.firebase.google.com/" target="_blank" class="text-emerald-600 underline font-semibold">Firebase Console</a> &gt; <strong>Firestore Database</strong> &gt; <strong>ルール</strong> タブを開き、以下に変更して「公開」をクリックします。
                 </p>
                 <pre class="bg-slate-900 text-slate-200 p-2.5 rounded-lg text-[11px] font-mono overflow-x-auto">rules_version = '2';
 service cloud.firestore {
@@ -332,7 +324,6 @@ service cloud.firestore {
     <!-- Application Core Script -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { 
             getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp 
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -349,7 +340,6 @@ service cloud.firestore {
 
         let app = null;
         let db = null;
-        let auth = null;
         let unsubscribeSnapshot = null;
         let allRecords = [];
         let chartInstance = null;
@@ -360,28 +350,171 @@ service cloud.firestore {
         const todayStr = new Date().toISOString().split('T')[0];
         document.getElementById('recordDate').value = todayStr;
 
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            if (!toast || !toastMessage) return;
+
+            toastMessage.textContent = message;
+
+            if (type === 'error') {
+                toastIcon.setAttribute('data-lucide', 'alert-circle');
+                toastIcon.className = 'w-5 h-5 text-rose-400';
+            } else if (type === 'warning') {
+                toastIcon.setAttribute('data-lucide', 'alert-triangle');
+                toastIcon.className = 'w-5 h-5 text-amber-400';
+            } else {
+                toastIcon.setAttribute('data-lucide', 'check-circle');
+                toastIcon.className = 'w-5 h-5 text-emerald-400';
+            }
+            if (window.lucide) lucide.createIcons();
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        function saveToLocalStorage() {
+            try {
+                localStorage.setItem('growth_records', JSON.stringify(allRecords));
+            } catch (e) {
+                console.warn("LocalStorage save notice:", e);
+            }
+        }
+
+        function loadFromLocalStorage() {
+            try {
+                const raw = localStorage.getItem('growth_records');
+                if (raw) {
+                    allRecords = JSON.parse(raw);
+                }
+            } catch (e) {
+                console.warn("LocalStorage load notice:", e);
+            }
+        }
+
+        function switchToLocalMode(reasonMsg = "") {
+            isLocalMode = true;
+            const badgeText = document.getElementById('statusBadgeText');
+            const detailText = document.getElementById('statusDetailText');
+
+            if (badgeText) {
+                badgeText.textContent = "ローカル保存 (ブラウザ内)";
+                badgeText.className = "px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-200 text-amber-800";
+            }
+            if (detailText) {
+                detailText.textContent = `${reasonMsg}データは端末のブラウザ内に安全に保存されます。`;
+            }
+
+            loadFromLocalStorage();
+            renderTable();
+            updateCropFilters();
+            updateChart();
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('growthChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: '草丈 (cm)',
+                            data: [],
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '葉枚数 (枚)',
+                            data: [],
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            padding: 10,
+                            cornerRadius: 8
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { font: { size: 11 } }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: '草丈 (cm)', font: { size: 11 } },
+                            suggestedMin: 0
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: '葉枚数 (枚)', font: { size: 11 } },
+                            grid: { drawOnChartArea: false },
+                            suggestedMin: 0
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChart() {
+            if (!chartInstance) return;
+
+            const filterCrop = document.getElementById('chartCropFilter').value;
+            let filtered = [...allRecords];
+
+            if (filterCrop !== 'ALL') {
+                filtered = filtered.filter(r => r.cropName === filterCrop);
+            }
+
+            // Chronological order for trend line
+            filtered.sort((a, b) => new Date(a.recordDate) - new Date(b.recordDate));
+
+            const labels = filtered.map(r => `${r.recordDate} (${r.cropName || ''})`);
+            const heightData = filtered.map(r => r.plantHeight ?? 0);
+            const leafData = filtered.map(r => r.leafCount ?? 0);
+
+            chartInstance.data.labels = labels;
+            chartInstance.data.datasets[0].data = heightData;
+            chartInstance.data.datasets[1].data = leafData;
+            chartInstance.update();
+        }
+
         async function setupFirebase() {
             try {
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
-                auth = getAuth(app);
-
-                // Authentication attempt with bypass for 400 Bad Request
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    try {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } catch (e) {
-                        console.warn("Custom token sign-in skipped:", e);
-                    }
-                } else {
-                    try {
-                        await signInAnonymously(auth);
-                    } catch (authErr) {
-                        // HTTP 400 Bad Request happens when "Anonymous Auth" is disabled in Firebase Console.
-                        // We catch it safely so it doesn't crash the app or block Firestore access.
-                        console.info("Firebase Auth (Anonymous) is disabled in Firebase Console. Continuing directly with Firestore/LocalStorage.");
-                    }
-                }
 
                 listenToRecords();
             } catch (err) {
@@ -391,8 +524,7 @@ service cloud.firestore {
         }
 
         function getCollectionRef() {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'seiikukannri-app';
-            return collection(db, 'artifacts', appId, 'public', 'data', 'growth_records');
+            return collection(db, 'seiiku_growth_records');
         }
 
         function listenToRecords() {
@@ -583,7 +715,6 @@ service cloud.firestore {
 
             try {
                 if (isLocalMode) {
-                    // Local Storage Mode
                     if (editId) {
                         const idx = allRecords.findIndex(r => r.id === editId);
                         if (idx !== -1) {
@@ -605,15 +736,13 @@ service cloud.firestore {
                     updateChart();
                     resetForm();
                 } else {
-                    // Firestore Mode
                     const firestorePayload = {
                         ...payload,
                         updatedAt: serverTimestamp()
                     };
 
                     if (editId) {
-                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'seiikukannri-app';
-                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'growth_records', editId);
+                        const docRef = doc(db, 'seiiku_growth_records', editId);
                         await updateDoc(docRef, firestorePayload);
                         showToast("データを更新しました");
                     } else {
@@ -626,10 +755,8 @@ service cloud.firestore {
                 }
             } catch (err) {
                 console.error("Save error:", err);
-                // Fallback on write failure
                 if (!isLocalMode) {
                     switchToLocalMode("Firebase書き込みエラーが発生したため、");
-                    // Retry save locally
                     const newRecord = {
                         id: editId || ('local_' + Date.now()),
                         createdAt: new Date().toISOString(),
@@ -672,8 +799,7 @@ service cloud.firestore {
                     updateChart();
                     showToast("データを削除しました");
                 } else {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'seiikukannri-app';
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'growth_records', pendingDeleteId);
+                    const docRef = doc(db, 'seiiku_growth_records', pendingDeleteId);
                     await deleteDoc(docRef);
                     showToast("データを削除しました");
                 }
@@ -695,7 +821,7 @@ service cloud.firestore {
         document.getElementById('closeGuideModalBtn').addEventListener('click', closeGuide);
         document.getElementById('confirmGuideBtn').addEventListener('click', closeGuide);
 
-        // Filter / Search Event Listeners
+        // Search & Filter event listeners
         document.getElementById('searchInput').addEventListener('input', renderTable);
         document.getElementById('sortSelect').addEventListener('change', renderTable);
         document.getElementById('chartCropFilter').addEventListener('change', updateChart);
