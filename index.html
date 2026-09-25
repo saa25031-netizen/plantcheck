@@ -1,1 +1,730 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌱 生育管理アプリ - Plant Growth Tracker</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for Growth Visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f7f5;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="text-slate-800 min-h-screen flex flex-col">
 
+    <!-- Header -->
+    <header class="bg-emerald-700 text-white shadow-md sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+                    <i data-lucide="sprout" class="w-6 h-6 text-emerald-200"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg sm:text-xl font-bold tracking-tight">生育管理アプリ</h1>
+                    <p class="text-xs text-emerald-200 hidden sm:block">作物の成長（葉枚数・草丈）をカンタン記録</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-2">
+                <button id="configBtn" class="flex items-center space-x-1.5 bg-emerald-800 hover:bg-emerald-900 text-emerald-100 text-xs sm:text-sm px-3 py-2 rounded-lg transition border border-emerald-600/50">
+                    <i data-lucide="settings" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Firebase設定確認</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Firebase Status Banner -->
+        <div id="connectionBanner" class="bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded-r-lg shadow-sm text-emerald-900 text-sm flex items-start justify-between">
+            <div class="flex items-start space-x-3">
+                <i data-lucide="database" class="w-5 h-5 text-emerald-600 shrink-0 mt-0.5"></i>
+                <div>
+                    <span class="font-semibold">Firebase 接続状況:</span>
+                    <span id="connectionStatusText">初期化中...</span>
+                    <p class="text-xs text-emerald-700 mt-0.5">※ プロジェクト ID: <code class="font-mono bg-emerald-100 px-1 py-0.5 rounded">seiikukannri-1d1b4</code> に接続しています。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upper Grid: Input Form + Chart -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- Record Form Panel (5項目の入力フォーム) -->
+            <section class="lg:col-span-5 bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80 flex flex-col">
+                <div class="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
+                    <div class="flex items-center space-x-2">
+                        <i data-lucide="pen-tool" class="w-5 h-5 text-emerald-600"></i>
+                        <h2 id="formTitle" class="text-base font-bold text-slate-800">新規データ登録</h2>
+                    </div>
+                    <button id="cancelEditBtn" class="hidden text-xs text-slate-500 hover:text-slate-700 underline">
+                        編集を取り消す
+                    </button>
+                </div>
+
+                <form id="growthForm" class="space-y-4 flex-grow flex flex-col justify-between">
+                    <input type="hidden" id="editDocId" value="">
+
+                    <div class="space-y-4">
+                        <!-- 1. 作物名 (Crop Name) -->
+                        <div>
+                            <label for="cropName" class="block text-xs font-semibold text-slate-600 mb-1">
+                                作物名 <span class="text-rose-500">*</span>
+                            </label>
+                            <div class="relative">
+                                <input type="text" id="cropName" required placeholder="例: トマト, イチゴ, ナス"
+                                    class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition">
+                                <i data-lucide="flower-2" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                            </div>
+                        </div>
+
+                        <!-- 2. 日付 (Date) -->
+                        <div>
+                            <label for="recordDate" class="block text-xs font-semibold text-slate-600 mb-1">
+                                日付 <span class="text-rose-500">*</span>
+                            </label>
+                            <div class="relative">
+                                <input type="date" id="recordDate" required
+                                    class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition">
+                                <i data-lucide="calendar" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                            </div>
+                        </div>
+
+                        <!-- 数値入力 2列: 3. 葉枚数 & 4. 草丈 -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <!-- 3. 葉枚数 (Leaf Count) -->
+                            <div>
+                                <label for="leafCount" class="block text-xs font-semibold text-slate-600 mb-1">
+                                    葉枚数 (枚) <span class="text-rose-500">*</span>
+                                </label>
+                                <div class="relative">
+                                    <input type="number" id="leafCount" min="0" step="0.1" required placeholder="0"
+                                        class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition">
+                                    <i data-lucide="leaf" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                                </div>
+                            </div>
+
+                            <!-- 4. 草丈 (Plant Height) -->
+                            <div>
+                                <label for="plantHeight" class="block text-xs font-semibold text-slate-600 mb-1">
+                                    草丈 (cm) <span class="text-rose-500">*</span>
+                                </label>
+                                <div class="relative">
+                                    <input type="number" id="plantHeight" min="0" step="0.1" required placeholder="0.0"
+                                        class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition">
+                                    <i data-lucide="ruler" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 5. メモ (Memo) -->
+                        <div>
+                            <label for="recordMemo" class="block text-xs font-semibold text-slate-600 mb-1">
+                                メモ
+                            </label>
+                            <div class="relative">
+                                <textarea id="recordMemo" rows="3" placeholder="追肥を実施、病害虫チェックOKなど..."
+                                    class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition resize-none"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 保存ボタン -->
+                    <div class="pt-4 mt-2">
+                        <button type="submit" id="saveBtn"
+                            class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition flex items-center justify-center space-x-2">
+                            <i data-lucide="save" class="w-4 h-4"></i>
+                            <span id="saveBtnText">保存する</span>
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Growth Chart Panel -->
+            <section class="lg:col-span-7 bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80 flex flex-col justify-between">
+                <div>
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-4 border-b border-slate-100">
+                        <div class="flex items-center space-x-2">
+                            <i data-lucide="line-chart" class="w-5 h-5 text-emerald-600"></i>
+                            <h2 class="text-base font-bold text-slate-800">成長推移グラフ</h2>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label for="chartCropFilter" class="text-xs text-slate-500 whitespace-nowrap">表示作物:</label>
+                            <select id="chartCropFilter" class="bg-slate-50 border border-slate-300 rounded-lg text-xs py-1.5 px-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                                <option value="ALL">すべての作物</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="relative h-64 sm:h-72 w-full">
+                        <canvas id="growthChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                    <span class="flex items-center gap-1">
+                        <span class="inline-block w-3 h-3 bg-emerald-500 rounded-full"></span> 草丈(cm)
+                    </span>
+                    <span class="flex items-center gap-1">
+                        <span class="inline-block w-3 h-3 bg-amber-500 rounded-full"></span> 葉枚数(枚)
+                    </span>
+                </div>
+            </section>
+        </div>
+
+        <!-- Records Table Section -->
+        <section class="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="database" class="w-5 h-5 text-emerald-600"></i>
+                    <h2 class="text-base font-bold text-slate-800">登録データ一覧</h2>
+                    <span id="recordCountBadge" class="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-0.5 rounded-full font-semibold">0 件</span>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="relative flex-1 sm:w-48">
+                        <input type="text" id="searchInput" placeholder="作物名やメモで検索..."
+                            class="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5"></i>
+                    </div>
+
+                    <select id="sortSelect" class="bg-slate-50 border border-slate-300 rounded-lg text-xs py-1.5 px-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <option value="date-desc">日付: 新しい順</option>
+                        <option value="date-asc">日付: 古い順</option>
+                        <option value="crop-asc">作物名順</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Data Table -->
+            <div class="overflow-x-auto custom-scrollbar">
+                <table class="w-full text-left text-sm text-slate-600 border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 font-semibold text-xs border-b border-slate-200">
+                            <th class="py-3 px-4">日付</th>
+                            <th class="py-3 px-4">作物名</th>
+                            <th class="py-3 px-4 text-right">葉枚数</th>
+                            <th class="py-3 px-4 text-right">草丈</th>
+                            <th class="py-3 px-4">メモ</th>
+                            <th class="py-3 px-4 text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recordsTableBody" class="divide-y divide-slate-100">
+                        <tr>
+                            <td colspan="6" class="text-center py-12 text-slate-400">
+                                <i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600"></i>
+                                Firestoreからデータを取得中...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Custom Toast Notification -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 ease-in-out bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center space-x-3 pointer-events-none">
+        <i id="toastIcon" data-lucide="check-circle" class="w-5 h-5 text-emerald-400"></i>
+        <span id="toastMessage" class="text-sm">メッセージ</span>
+    </div>
+
+    <!-- Firebase Config View Modal -->
+    <div id="configModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-100">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div class="flex items-center space-x-2 text-emerald-700">
+                    <i data-lucide="key" class="w-5 h-5"></i>
+                    <h3 class="font-bold text-base">Firebase 設定情報</h3>
+                </div>
+                <button id="closeConfigModalBtn" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <p class="text-xs text-slate-600 leading-relaxed">
+                現在設定されている Firebase 接続構成です。
+            </p>
+
+            <div>
+                <textarea id="configJsonInput" readonly rows="7" class="w-full p-3 font-mono text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button id="cancelConfigBtn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-medium shadow">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center">
+            <div class="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto">
+                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h3 class="font-bold text-slate-800 text-base">データを削除しますか？</h3>
+                <p class="text-xs text-slate-500 mt-1">Firestoreから完全に削除されます。</p>
+            </div>
+            <div class="flex space-x-2 pt-2">
+                <button id="cancelDeleteBtn" class="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-xl">キャンセル</button>
+                <button id="confirmDeleteBtn" class="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-medium rounded-xl shadow">削除する</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ユーザー指定の Firebase 設定
+        const firebaseConfig = {
+            apiKey: "AIzaSyDXJJFBkf_cxS7sWLoK6vHm3LJf3_Iu6zw",
+            authDomain: "seiikukannri-1d1b4.firebaseapp.com",
+            projectId: "seiikukannri-1d1b4",
+            storageBucket: "seiikukannri-1d1b4.firebasestorage.app",
+            messagingSenderId: "41293843271",
+            appId: "1:41293843271:web:9651b8ee79636687bdda62"
+        };
+
+        // Application State
+        let app = null;
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        let unsubscribeSnapshot = null;
+        let allRecords = [];
+        let chartInstance = null;
+        let pendingDeleteId = null;
+
+        // Form Default Date
+        const todayStr = new Date().toISOString().split('T')[0];
+        document.getElementById('recordDate').value = todayStr;
+
+        // Toast Notification Utility
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastMessage.textContent = message;
+            if (type === 'error') {
+                toastIcon.setAttribute('data-lucide', 'alert-circle');
+                toastIcon.className = 'w-5 h-5 text-rose-400';
+            } else {
+                toastIcon.setAttribute('data-lucide', 'check-circle');
+                toastIcon.className = 'w-5 h-5 text-emerald-400';
+            }
+            lucide.createIcons();
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('growthChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: '草丈 (cm)',
+                            data: [],
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '葉枚数 (枚)',
+                            data: [],
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'transparent',
+                            borderDash: [5, 5],
+                            tension: 0.3,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            padding: 10,
+                            backgroundColor: '#0f172a',
+                            titleFont: { size: 12 },
+                            bodyFont: { size: 12 }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: '草丈 (cm)', font: { size: 10 } },
+                            min: 0
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: '葉枚数 (枚)', font: { size: 10 } },
+                            grid: { drawOnChartArea: false },
+                            min: 0
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChart() {
+            if (!chartInstance) return;
+
+            const selectedCrop = document.getElementById('chartCropFilter').value;
+            let filtered = [...allRecords];
+
+            if (selectedCrop !== 'ALL') {
+                filtered = filtered.filter(r => r.cropName === selectedCrop);
+            }
+
+            filtered.sort((a, b) => new Date(a.recordDate) - new Date(b.recordDate));
+
+            chartInstance.data.labels = filtered.map(r => r.recordDate);
+            chartInstance.data.datasets[0].data = filtered.map(r => r.plantHeight);
+            chartInstance.data.datasets[1].data = filtered.map(r => r.leafCount);
+            chartInstance.update();
+        }
+
+        async function setupFirebase() {
+            const banner = document.getElementById('connectionStatusText');
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // 認証処理 (エラーが発生してもFirestore処理を続行できるよう例外をキャッチ)
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                    currentUser = auth.currentUser;
+                    banner.textContent = `接続成功 (ユーザーID: ${currentUser ? currentUser.uid.substring(0, 8) : 'Anon'}...)`;
+                    banner.className = "font-semibold text-emerald-700";
+                } catch (authErr) {
+                    console.warn("Firebase Auth is not enabled in Firebase Console, proceeding directly with Firestore:", authErr);
+                    banner.textContent = "Firestore 接続完了 (※認証機能未有効のため未認証モードで稼働中)";
+                    banner.className = "font-semibold text-emerald-700";
+                }
+
+                listenToRecords();
+            } catch (err) {
+                console.error("Firebase connection error:", err);
+                banner.textContent = "接続エラー: Firestore ルールや API キーをご確認ください。";
+                banner.className = "font-semibold text-rose-700";
+            }
+        }
+
+        function getCollectionRef() {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'seiikukannri-app';
+            return collection(db, 'artifacts', appId, 'public', 'data', 'growth_records');
+        }
+
+        function listenToRecords() {
+            if (unsubscribeSnapshot) unsubscribeSnapshot();
+            if (!db) return;
+
+            try {
+                const colRef = getCollectionRef();
+                unsubscribeSnapshot = onSnapshot(colRef, (snapshot) => {
+                    allRecords = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+
+                    updateCropFilters();
+                    renderTable();
+                    updateChart();
+                }, (error) => {
+                    console.error("Firestore snapshot error:", error);
+                    showToast("データの取得に失敗しました", "error");
+                });
+            } catch (e) {
+                console.error("Snapshot listen error:", e);
+            }
+        }
+
+        function updateCropFilters() {
+            const select = document.getElementById('chartCropFilter');
+            const currentVal = select.value;
+            const crops = [...new Set(allRecords.map(r => r.cropName))].filter(Boolean);
+
+            select.innerHTML = '<option value="ALL">すべての作物</option>';
+            crops.forEach(crop => {
+                const opt = document.createElement('option');
+                opt.value = crop;
+                opt.textContent = crop;
+                select.appendChild(opt);
+            });
+
+            if (crops.includes(currentVal)) {
+                select.value = currentVal;
+            }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('recordsTableBody');
+            const searchKeyword = document.getElementById('searchInput').value.toLowerCase();
+            const sortMode = document.getElementById('sortSelect').value;
+
+            let filtered = allRecords.filter(r => {
+                const nameMatch = (r.cropName || '').toLowerCase().includes(searchKeyword);
+                const memoMatch = (r.memo || '').toLowerCase().includes(searchKeyword);
+                return nameMatch || memoMatch;
+            });
+
+            filtered.sort((a, b) => {
+                if (sortMode === 'date-desc') return new Date(b.recordDate) - new Date(a.recordDate);
+                if (sortMode === 'date-asc') return new Date(a.recordDate) - new Date(b.recordDate);
+                if (sortMode === 'crop-asc') return (a.cropName || '').localeCompare(b.cropName || '');
+                return 0;
+            });
+
+            document.getElementById('recordCountBadge').textContent = `${filtered.length} 件`;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-10 text-slate-400">
+                            <i data-lucide="sprout" class="w-8 h-8 mx-auto mb-2 text-slate-300"></i>
+                            データがまだ登録されていません
+                        </td>
+                    </tr>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(r => `
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="py-3 px-4 font-mono text-xs text-slate-600 whitespace-nowrap">${escapeHtml(r.recordDate || '')}</td>
+                    <td class="py-3 px-4 font-semibold text-slate-800 whitespace-nowrap">
+                        <span class="inline-flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            ${escapeHtml(r.cropName || '')}
+                        </span>
+                    </td>
+                    <td class="py-3 px-4 text-right font-medium text-amber-700 whitespace-nowrap">${r.leafCount ?? 0} 枚</td>
+                    <td class="py-3 px-4 text-right font-medium text-emerald-700 whitespace-nowrap">${r.plantHeight ?? 0} cm</td>
+                    <td class="py-3 px-4 text-xs text-slate-500 max-w-xs truncate">${escapeHtml(r.memo || '-')}</td>
+                    <td class="py-3 px-4 text-center whitespace-nowrap">
+                        <div class="flex items-center justify-center space-x-1">
+                            <button data-id="${r.id}" class="edit-btn p-1.5 text-slate-400 hover:text-emerald-600 rounded-lg hover:bg-emerald-50 transition" title="編集">
+                                <i data-lucide="edit-3" class="w-4 h-4"></i>
+                            </button>
+                            <button data-id="${r.id}" class="delete-btn p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition" title="削除">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+            lucide.createIcons();
+            attachTableEventListeners();
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function attachTableEventListeners() {
+            document.querySelectorAll('.edit-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = e.currentTarget.getAttribute('data-id');
+                    startEditRecord(id);
+                });
+            });
+
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    pendingDeleteId = e.currentTarget.getAttribute('data-id');
+                    document.getElementById('deleteModal').classList.remove('hidden');
+                });
+            });
+        }
+
+        function startEditRecord(id) {
+            const record = allRecords.find(r => r.id === id);
+            if (!record) return;
+
+            document.getElementById('editDocId').value = record.id;
+            document.getElementById('cropName').value = record.cropName || '';
+            document.getElementById('recordDate').value = record.recordDate || todayStr;
+            document.getElementById('leafCount').value = record.leafCount ?? '';
+            document.getElementById('plantHeight').value = record.plantHeight ?? '';
+            document.getElementById('recordMemo').value = record.memo || '';
+
+            document.getElementById('formTitle').textContent = 'データを編集';
+            document.getElementById('saveBtnText').textContent = '更新する';
+            document.getElementById('cancelEditBtn').classList.remove('hidden');
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function resetForm() {
+            document.getElementById('growthForm').reset();
+            document.getElementById('editDocId').value = '';
+            document.getElementById('recordDate').value = todayStr;
+            document.getElementById('formTitle').textContent = '新規データ登録';
+            document.getElementById('saveBtnText').textContent = '保存する';
+            document.getElementById('cancelEditBtn').classList.add('hidden');
+        }
+
+        document.getElementById('cancelEditBtn').addEventListener('click', resetForm);
+
+        // Form Submit Handler
+        document.getElementById('growthForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const editId = document.getElementById('editDocId').value;
+            const cropName = document.getElementById('cropName').value.trim();
+            const recordDate = document.getElementById('recordDate').value;
+            const leafCount = parseFloat(document.getElementById('leafCount').value) || 0;
+            const plantHeight = parseFloat(document.getElementById('plantHeight').value) || 0;
+            const memo = document.getElementById('recordMemo').value.trim();
+
+            if (!cropName || !recordDate) {
+                showToast("作物名と日付を入力してください", "error");
+                return;
+            }
+
+            const payload = {
+                cropName,
+                recordDate,
+                leafCount,
+                plantHeight,
+                memo,
+                updatedAt: serverTimestamp()
+            };
+
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = true;
+
+            try {
+                if (editId) {
+                    // Update
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'seiikukannri-app';
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'growth_records', editId);
+                    await updateDoc(docRef, payload);
+                    showToast("データを更新しました");
+                } else {
+                    // Create
+                    payload.createdAt = serverTimestamp();
+                    const colRef = getCollectionRef();
+                    await addDoc(colRef, payload);
+                    showToast("データを保存しました");
+                }
+                resetForm();
+            } catch (err) {
+                console.error("Save error:", err);
+                showToast("保存に失敗しました。Firestoreルールを確認してください", "error");
+            } finally {
+                saveBtn.disabled = false;
+            }
+        });
+
+        // Delete Handlers
+        document.getElementById('cancelDeleteBtn').addEventListener('click', () => {
+            pendingDeleteId = null;
+            document.getElementById('deleteModal').classList.add('hidden');
+        });
+
+        document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+            if (!pendingDeleteId) return;
+            try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'seiikukannri-app';
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'growth_records', pendingDeleteId);
+                await deleteDoc(docRef);
+                showToast("データを削除しました");
+            } catch (err) {
+                console.error("Delete error:", err);
+                showToast("削除に失敗しました", "error");
+            } finally {
+                pendingDeleteId = null;
+                document.getElementById('deleteModal').classList.add('hidden');
+            }
+        });
+
+        // Config Modal
+        const configModal = document.getElementById('configModal');
+        document.getElementById('configBtn').addEventListener('click', () => {
+            document.getElementById('configJsonInput').value = JSON.stringify(firebaseConfig, null, 2);
+            configModal.classList.remove('hidden');
+        });
+        document.getElementById('closeConfigModalBtn').addEventListener('click', () => configModal.classList.add('hidden'));
+        document.getElementById('cancelConfigBtn').addEventListener('click', () => configModal.classList.add('hidden'));
+
+        // Filter / Search Event Listeners
+        document.getElementById('searchInput').addEventListener('input', renderTable);
+        document.getElementById('sortSelect').addEventListener('change', renderTable);
+        document.getElementById('chartCropFilter').addEventListener('change', updateChart);
+
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            initChart();
+            setupFirebase();
+        });
+    </script>
+</body>
+</html>
