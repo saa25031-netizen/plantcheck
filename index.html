@@ -338,6 +338,7 @@ service cloud.firestore {
             appId: "1:41293843271:web:9651b8ee79636687bdda62"
         };
 
+        // State variables
         let app = null;
         let db = null;
         let unsubscribeSnapshot = null;
@@ -346,9 +347,18 @@ service cloud.firestore {
         let pendingDeleteId = null;
         let isLocalMode = false;
 
-        // Default today's date
         const todayStr = new Date().toISOString().split('T')[0];
-        document.getElementById('recordDate').value = todayStr;
+
+        /* --- ALL FUNCTIONS DEFINED BEFORE USE --- */
+
+        function escapeHtml(str) {
+            return String(str || '')
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
 
         function showToast(message, type = 'success') {
             const toast = document.getElementById('toast');
@@ -399,99 +409,11 @@ service cloud.firestore {
             }
         }
 
-        function switchToLocalMode(reasonMsg = "") {
-            isLocalMode = true;
-            const badgeText = document.getElementById('statusBadgeText');
-            const detailText = document.getElementById('statusDetailText');
-
-            if (badgeText) {
-                badgeText.textContent = "ローカル保存 (ブラウザ内)";
-                badgeText.className = "px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-200 text-amber-800";
-            }
-            if (detailText) {
-                detailText.textContent = `${reasonMsg}データは端末のブラウザ内に安全に保存されます。`;
-            }
-
-            loadFromLocalStorage();
-            renderTable();
-            updateCropFilters();
-            updateChart();
-        }
-
-        function initChart() {
-            const ctx = document.getElementById('growthChart').getContext('2d');
-            chartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [
-                        {
-                            label: '草丈 (cm)',
-                            data: [],
-                            borderColor: '#10b981',
-                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                            borderWidth: 2,
-                            tension: 0.3,
-                            fill: true,
-                            yAxisID: 'y'
-                        },
-                        {
-                            label: '葉枚数 (枚)',
-                            data: [],
-                            borderColor: '#f59e0b',
-                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                            borderWidth: 2,
-                            tension: 0.3,
-                            fill: true,
-                            yAxisID: 'y1'
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'index',
-                        intersect: false,
-                    },
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            padding: 10,
-                            cornerRadius: 8
-                        }
-                    },
-                    scales: {
-                        x: {
-                            grid: { display: false },
-                            ticks: { font: { size: 11 } }
-                        },
-                        y: {
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            title: { display: true, text: '草丈 (cm)', font: { size: 11 } },
-                            suggestedMin: 0
-                        },
-                        y1: {
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            title: { display: true, text: '葉枚数 (枚)', font: { size: 11 } },
-                            grid: { drawOnChartArea: false },
-                            suggestedMin: 0
-                        }
-                    }
-                }
-            });
-        }
-
         function updateChart() {
             if (!chartInstance) return;
 
-            const filterCrop = document.getElementById('chartCropFilter').value;
+            const filterSelect = document.getElementById('chartCropFilter');
+            const filterCrop = filterSelect ? filterSelect.value : 'ALL';
             let filtered = [...allRecords];
 
             if (filterCrop !== 'ALL') {
@@ -499,9 +421,9 @@ service cloud.firestore {
             }
 
             // Chronological order for trend line
-            filtered.sort((a, b) => new Date(a.recordDate) - new Date(b.recordDate));
+            filtered.sort((a, b) => new Date(a.recordDate || 0) - new Date(b.recordDate || 0));
 
-            const labels = filtered.map(r => `${r.recordDate} (${r.cropName || ''})`);
+            const labels = filtered.map(r => `${r.recordDate || ''} (${r.cropName || ''})`);
             const heightData = filtered.map(r => r.plantHeight ?? 0);
             const leafData = filtered.map(r => r.leafCount ?? 0);
 
@@ -511,49 +433,9 @@ service cloud.firestore {
             chartInstance.update();
         }
 
-        async function setupFirebase() {
-            try {
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-
-                listenToRecords();
-            } catch (err) {
-                console.warn("Firebase setup initialization notice:", err);
-                switchToLocalMode("Firebase初期化エラーが発生したため、");
-            }
-        }
-
-        function getCollectionRef() {
-            return collection(db, 'seiiku_growth_records');
-        }
-
-        function listenToRecords() {
-            if (unsubscribeSnapshot) unsubscribeSnapshot();
-            if (!db || isLocalMode) return;
-
-            try {
-                const colRef = getCollectionRef();
-                unsubscribeSnapshot = onSnapshot(colRef, (snapshot) => {
-                    allRecords = snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data()
-                    }));
-
-                    updateCropFilters();
-                    renderTable();
-                    updateChart();
-                }, (error) => {
-                    console.warn("Firestore access permission notice:", error.code || error.message);
-                    switchToLocalMode("Firestoreのアクセス権限（ルール）の設定が必要なため、");
-                });
-            } catch (e) {
-                console.error("Snapshot listen exception:", e);
-                switchToLocalMode("Firestore接続エラーのため、");
-            }
-        }
-
         function updateCropFilters() {
             const select = document.getElementById('chartCropFilter');
+            if (!select) return;
             const currentVal = select.value;
             const crops = [...new Set(allRecords.map(r => r.cropName))].filter(Boolean);
 
@@ -572,8 +454,13 @@ service cloud.firestore {
 
         function renderTable() {
             const tbody = document.getElementById('recordsTableBody');
-            const searchKeyword = (document.getElementById('searchInput').value || '').toLowerCase();
-            const sortMode = document.getElementById('sortSelect').value;
+            if (!tbody) return;
+
+            const searchInput = document.getElementById('searchInput');
+            const sortSelect = document.getElementById('sortSelect');
+
+            const searchKeyword = searchInput ? (searchInput.value || '').toLowerCase() : '';
+            const sortMode = sortSelect ? sortSelect.value : 'date-desc';
 
             let filtered = allRecords.filter(r => {
                 const nameMatch = (r.cropName || '').toLowerCase().includes(searchKeyword);
@@ -582,13 +469,14 @@ service cloud.firestore {
             });
 
             filtered.sort((a, b) => {
-                if (sortMode === 'date-desc') return new Date(b.recordDate) - new Date(a.recordDate);
-                if (sortMode === 'date-asc') return new Date(a.recordDate) - new Date(b.recordDate);
+                if (sortMode === 'date-desc') return new Date(b.recordDate || 0) - new Date(a.recordDate || 0);
+                if (sortMode === 'date-asc') return new Date(a.recordDate || 0) - new Date(b.recordDate || 0);
                 if (sortMode === 'crop-asc') return (a.cropName || '').localeCompare(b.cropName || '');
                 return 0;
             });
 
-            document.getElementById('recordCountBadge').textContent = `${filtered.length} 件`;
+            const badge = document.getElementById('recordCountBadge');
+            if (badge) badge.textContent = `${filtered.length} 件`;
 
             if (filtered.length === 0) {
                 tbody.innerHTML = `
@@ -632,13 +520,91 @@ service cloud.firestore {
             attachTableEventListeners();
         }
 
-        function escapeHtml(str) {
-            return String(str)
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
+        function switchToLocalMode(reasonMsg = "") {
+            isLocalMode = true;
+            const badgeText = document.getElementById('statusBadgeText');
+            const detailText = document.getElementById('statusDetailText');
+
+            if (badgeText) {
+                badgeText.textContent = "ローカル保存 (ブラウザ内)";
+                badgeText.className = "px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-200 text-amber-800";
+            }
+            if (detailText) {
+                detailText.textContent = `${reasonMsg}データは端末のブラウザ内に安全に保存されます。`;
+            }
+
+            loadFromLocalStorage();
+            renderTable();
+            updateCropFilters();
+            updateChart();
+        }
+
+        function initChart() {
+            const canvas = document.getElementById('growthChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: '草丈 (cm)',
+                            data: [],
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '葉枚数 (枚)',
+                            data: [],
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { padding: 10, cornerRadius: 8 }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { font: { size: 11 } }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: '草丈 (cm)', font: { size: 11 } },
+                            suggestedMin: 0
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: '葉枚数 (枚)', font: { size: 11 } },
+                            grid: { drawOnChartArea: false },
+                            suggestedMin: 0
+                        }
+                    }
+                }
+            });
         }
 
         function attachTableEventListeners() {
@@ -684,6 +650,56 @@ service cloud.firestore {
             document.getElementById('cancelEditBtn').classList.add('hidden');
         }
 
+        function getCollectionRef() {
+            return collection(db, 'seiiku_growth_records');
+        }
+
+        function listenToRecords() {
+            if (unsubscribeSnapshot) unsubscribeSnapshot();
+            if (!db || isLocalMode) return;
+
+            try {
+                const colRef = getCollectionRef();
+                unsubscribeSnapshot = onSnapshot(colRef, (snapshot) => {
+                    allRecords = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+
+                    updateCropFilters();
+                    renderTable();
+                    updateChart();
+                }, (error) => {
+                    console.warn("Firestore access permission notice:", error.code || error.message);
+                    switchToLocalMode("Firestoreのアクセス権限（ルール）の設定が必要なため、");
+                });
+            } catch (e) {
+                console.error("Snapshot listen exception:", e);
+                switchToLocalMode("Firestore接続エラーのため、");
+            }
+        }
+
+        async function setupFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                listenToRecords();
+            } catch (err) {
+                console.warn("Firebase setup initialization notice:", err);
+                switchToLocalMode("Firebase初期化エラーが発生したため、");
+            }
+        }
+
+        /* --- ATTACH ALL FUNCTIONS TO WINDOW SCOPE TO PREVENT ANY UNCAUGHT REFERENCE ERROR --- */
+        window.updateChart = updateChart;
+        window.renderTable = renderTable;
+        window.updateCropFilters = updateCropFilters;
+        window.switchToLocalMode = switchToLocalMode;
+        window.startEditRecord = startEditRecord;
+        window.resetForm = resetForm;
+        window.showToast = showToast;
+
+        // Attach DOM event listeners
         document.getElementById('cancelEditBtn').addEventListener('click', resetForm);
 
         document.getElementById('growthForm').addEventListener('submit', async (e) => {
@@ -826,6 +842,10 @@ service cloud.firestore {
         document.getElementById('sortSelect').addEventListener('change', renderTable);
         document.getElementById('chartCropFilter').addEventListener('change', updateChart);
 
+        // Set initial date
+        document.getElementById('recordDate').value = todayStr;
+
+        // Initialization on DOM load
         window.addEventListener('DOMContentLoaded', () => {
             if (window.lucide) {
                 lucide.createIcons();
